@@ -1,0 +1,17 @@
+export type TaskStatus = 'todo' | 'in-progress' | 'done';
+
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  dueDate: string;
+  sortOrder: number;
+}
+
+export interface TaskInput {
+  title: string;
+  description: string;
+  status: TaskStatus;
+  dueDate: string;
+}
