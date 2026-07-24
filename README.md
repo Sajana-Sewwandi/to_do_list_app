@@ -1,15 +1,17 @@
 # To-Do List API
 
-A NestJS REST API for user registration, JWT authentication, and user-owned task management. Data is stored in SQLite through TypeORM.
+A NestJS REST API for user registration, JWT authentication, and user-owned task management. Data is stored in MySQL through TypeORM.
+
+The project also includes a React + Zustand web client in `frontend/`. It uses the NestJS API for authentication and task management.
 
 ## Features
 
 - User registration with bcrypt password hashing
 - JWT login tokens that expire after one hour
 - Protected task CRUD endpoints
-- Per-user task access: users can only list, update, or delete their own tasks
+- Per-user task access: users can only list, update, delete, or reorder their own tasks
 - Task validation with `class-validator`
-- SQLite database created automatically during local development
+- MySQL schema synchronized automatically during local development
 - Unit tests for `TasksService`
 
 ## Requirements
@@ -51,7 +53,23 @@ Start in watch mode for development:
 npm run start:dev
 ```
 
-The server listens on `http://localhost:3000` by default. Set the `PORT` environment variable to use a different port.
+The server listens on `http://localhost:8080` with the included `.env` file. Set the `PORT` environment variable to use a different port.
+
+## Run the web client locally
+
+In a second terminal, start the React development server:
+
+```bash
+npm run client:dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/auth` and `/tasks` calls to the NestJS server at `http://localhost:8080`, which matches the included `.env` configuration. Start the NestJS server first with `npm run start:dev`.
+
+The client provides registration, login, persistent session state, task CRUD, and drag-and-drop task tiles. Each drop calls `PUT /tasks/reorder` to persist the new order. Build the client with:
+
+```bash
+npm run client:build
+```
 
 Other commands:
 
@@ -68,7 +86,7 @@ npm run start:prod
 
 ## Database
 
-The project uses SQLite and writes the database to `database.sqlite` in the project root. TypeORM has `synchronize: true` enabled, so tables are created and updated automatically when the application starts.
+The project uses MySQL. Configure the `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` values in `.env`. TypeORM has `synchronize: true` enabled, so tables are created and updated automatically when the application starts.
 
 This setting is convenient for local development. Use migrations instead of `synchronize` for production deployments.
 
@@ -146,7 +164,7 @@ GET /tasks
 Authorization: Bearer <access_token>
 ```
 
-Returns only the authenticated user's tasks, ordered by `dueDate` ascending.
+Returns only the authenticated user's tasks, in the user's saved custom order.
 
 ### Create a task
 
@@ -164,6 +182,20 @@ Content-Type: application/json
 ```
 
 `status` is optional and defaults to `todo`.
+
+### Reorder tasks
+
+```http
+PUT /tasks/reorder
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "taskIds": [3, 1, 2]
+}
+```
+
+`taskIds` must contain every task owned by the authenticated user exactly once, in the desired order. The response returns the tasks in their newly saved order. Task IDs belonging to another user, duplicate IDs, and omitted IDs return `400 Bad Request`.
 
 ### Update a task
 
@@ -198,6 +230,7 @@ Task request bodies are validated and unknown fields are removed.
 | `description` | Required | Optional | Non-empty string |
 | `status` | Optional | Optional | `todo`, `in-progress`, or `done` |
 | `dueDate` | Required | Optional | ISO 8601 date string |
+| `taskIds` | N/A | Reorder only | Non-empty array of unique integer task IDs; must include all of the user's tasks |
 
 ## Tests
 

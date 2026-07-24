@@ -7,6 +7,7 @@ describe('TasksService', () => {
   const tasksRepository = {
     create: jest.fn(),
     save: jest.fn(),
+    find: jest.fn(),
     findOne: jest.fn(),
     remove: jest.fn(),
   };
@@ -32,11 +33,13 @@ describe('TasksService', () => {
 
     tasksRepository.create.mockReturnValue(task);
     tasksRepository.save.mockResolvedValue(task);
+    tasksRepository.findOne.mockResolvedValue(null);
 
     await expect(service.create(7, createTaskDto)).resolves.toEqual(task);
     expect(tasksRepository.create).toHaveBeenCalledWith({
       ...createTaskDto,
       dueDate: new Date('2026-08-01T00:00:00.000Z'),
+      sortOrder: 0,
       user: { id: 7 },
     });
     expect(tasksRepository.save).toHaveBeenCalledWith(task);
@@ -84,5 +87,47 @@ describe('TasksService', () => {
       where: { id: 3, user: { id: 7 } },
     });
     expect(tasksRepository.remove).toHaveBeenCalledWith(task);
+  });
+
+  it('reorders every task owned by the authenticated user', async () => {
+    const tasks = [
+      { id: 1, sortOrder: 0 },
+      { id: 2, sortOrder: 1 },
+      { id: 3, sortOrder: 2 },
+    ] as Task[];
+    tasksRepository.find.mockResolvedValue(tasks);
+    tasksRepository.save.mockResolvedValue([
+      tasks[2],
+      tasks[0],
+      tasks[1],
+    ]);
+
+    await expect(service.reorder(7, { taskIds: [3, 1, 2] })).resolves.toEqual([
+      tasks[2],
+      tasks[0],
+      tasks[1],
+    ]);
+
+    expect(tasksRepository.find).toHaveBeenCalledWith({
+      where: { user: { id: 7 } },
+      order: { sortOrder: 'ASC', id: 'ASC' },
+    });
+    expect(tasks).toEqual([
+      { id: 1, sortOrder: 1 },
+      { id: 2, sortOrder: 2 },
+      { id: 3, sortOrder: 0 },
+    ]);
+  });
+
+  it('rejects a reorder request that omits an owned task', async () => {
+    tasksRepository.find.mockResolvedValue([
+      { id: 1, sortOrder: 0 },
+      { id: 2, sortOrder: 1 },
+    ] as Task[]);
+
+    await expect(service.reorder(7, { taskIds: [1] })).rejects.toThrow(
+      'taskIds must contain every task owned by the authenticated user exactly once',
+    );
+    expect(tasksRepository.save).not.toHaveBeenCalled();
   });
 });

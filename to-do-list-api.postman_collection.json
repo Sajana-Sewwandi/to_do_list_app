@@ -223,6 +223,34 @@
           "response": []
         },
         {
+          "name": "Reorder My Tasks",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taskIds\": [3, 1, 2]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tasks/reorder",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks", "reorder"]
+            },
+            "description": "Replaces the authenticated user's task order. Supply every task ID owned by the user exactly once, in the desired order."
+          },
+          "response": []
+        },
+        {
           "name": "Delete Task",
           "request": {
             "method": "DELETE",

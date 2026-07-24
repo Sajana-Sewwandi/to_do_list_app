@@ -28,6 +28,9 @@ export class Task {
   @Column({ type: 'datetime' })
   dueDate: Date;
 
+  @Column({ type: 'int', default: 0 })
+  sortOrder: number;
+
   @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
   user: User;
 }

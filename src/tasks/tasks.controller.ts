@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { ReorderTasksDto } from './dto/reorder-tasks.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TasksService } from './tasks.service';
 
@@ -42,6 +43,14 @@ export class TasksController {
     @Body() createTaskDto: CreateTaskDto,
   ) {
     return this.tasksService.create(request.user.userId, createTaskDto);
+  }
+
+  @Put('reorder')
+  reorder(
+    @Req() request: AuthenticatedRequest,
+    @Body() reorderTasksDto: ReorderTasksDto,
+  ) {
+    return this.tasksService.reorder(request.user.userId, reorderTasksDto);
   }
 
   @Put(':id')
