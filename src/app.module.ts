@@ -22,6 +22,14 @@ import { User } from './users/user.entity';
         username: configService.getOrThrow<string>('DB_USERNAME'),
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
+        connectTimeout: Number(
+          configService.get<string>('DB_CONNECT_TIMEOUT_MS') ?? 10000,
+        ),
+        extra: {
+          connectionLimit: Number(
+            configService.get<string>('DB_CONNECTION_LIMIT') ?? 10,
+          ),
+        },
         entities: [User, Task],
         synchronize: true,
       }),

@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { RedisCacheService } from '../cache/redis-cache.service';
 import { Task, TaskStatus } from './task.entity';
 import { TasksService } from './tasks.service';
 
@@ -11,10 +12,19 @@ describe('TasksService', () => {
     findOne: jest.fn(),
     remove: jest.fn(),
   };
+  const cache = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new TasksService(tasksRepository as unknown as Repository<Task>);
+    cache.get.mockResolvedValue(null);
+    service = new TasksService(
+      tasksRepository as unknown as Repository<Task>,
+      cache as unknown as RedisCacheService,
+    );
   });
 
   it('creates a task for the authenticated user', async () => {
@@ -42,7 +52,13 @@ describe('TasksService', () => {
       sortOrder: 0,
       user: { id: 7 },
     });
+    expect(tasksRepository.findOne).toHaveBeenCalledWith({
+      where: { user: { id: 7 } },
+      order: { sortOrder: 'DESC' },
+      select: { sortOrder: true },
+    });
     expect(tasksRepository.save).toHaveBeenCalledWith(task);
+    expect(cache.del).toHaveBeenCalledWith('tasks:user:7');
   });
 
   it('updates a task belonging to the authenticated user', async () => {
@@ -74,6 +90,7 @@ describe('TasksService', () => {
       dueDate: new Date('2026-08-02T00:00:00.000Z'),
     });
     expect(tasksRepository.save).toHaveBeenCalledWith(task);
+    expect(cache.del).toHaveBeenCalledWith('tasks:user:7');
   });
 
   it('deletes a task belonging to the authenticated user', async () => {
@@ -87,6 +104,7 @@ describe('TasksService', () => {
       where: { id: 3, user: { id: 7 } },
     });
     expect(tasksRepository.remove).toHaveBeenCalledWith(task);
+    expect(cache.del).toHaveBeenCalledWith('tasks:user:7');
   });
 
   it('reorders every task owned by the authenticated user', async () => {
@@ -117,6 +135,7 @@ describe('TasksService', () => {
       { id: 2, sortOrder: 2 },
       { id: 3, sortOrder: 0 },
     ]);
+    expect(cache.del).toHaveBeenCalledWith('tasks:user:7');
   });
 
   it('rejects a reorder request that omits an owned task', async () => {
@@ -129,5 +148,24 @@ describe('TasksService', () => {
       'taskIds must contain every task owned by the authenticated user exactly once',
     );
     expect(tasksRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('returns a cached task list without querying MySQL', async () => {
+    const cachedTasks = [{ id: 1, sortOrder: 0 }] as Task[];
+    cache.get.mockResolvedValue(cachedTasks);
+
+    await expect(service.findAll(7)).resolves.toEqual(cachedTasks);
+
+    expect(cache.get).toHaveBeenCalledWith('tasks:user:7');
+    expect(tasksRepository.find).not.toHaveBeenCalled();
+  });
+
+  it('stores a MySQL task list in Redis for subsequent reads', async () => {
+    const tasks = [{ id: 1, sortOrder: 0 }] as Task[];
+    tasksRepository.find.mockResolvedValue(tasks);
+
+    await expect(service.findAll(7)).resolves.toEqual(tasks);
+
+    expect(cache.set).toHaveBeenCalledWith('tasks:user:7', tasks, 300);
   });
 });
