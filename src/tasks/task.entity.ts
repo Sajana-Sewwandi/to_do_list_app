@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { User } from '../users/user.entity';
 
 export enum TaskStatus {
@@ -8,6 +8,7 @@ export enum TaskStatus {
 }
 
 @Entity()
+@Index('IDX_task_user_sort_order', ['user', 'sortOrder'])
 export class Task {
   @PrimaryGeneratedColumn()
   id: number;

@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+frontend/dist
+.git
+.env
+.env.docker
+database.sqlite
+npm-debug.log

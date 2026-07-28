@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { RedisCacheService } from '../cache/redis-cache.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReorderTasksDto } from './dto/reorder-tasks.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -8,12 +9,26 @@ import { Task } from './task.entity';
 
 @Injectable()
 export class TasksService {
+  private static readonly TASK_LIST_TTL_SECONDS = 300;
+
   constructor(
     @InjectRepository(Task)
     private readonly tasksRepository: Repository<Task>,
+    private readonly cache: RedisCacheService,
   ) {}
 
-  findAll(userId: number) {
+  async findAll(userId: number) {
+    const cacheKey = this.taskListCacheKey(userId);
+    const cachedTasks = await this.cache.get<Task[]>(cacheKey);
+
+    if (cachedTasks) return cachedTasks;
+
+    const tasks = await this.findAllFromDatabase(userId);
+    await this.cache.set(cacheKey, tasks, TasksService.TASK_LIST_TTL_SECONDS);
+    return tasks;
+  }
+
+  private findAllFromDatabase(userId: number) {
     return this.tasksRepository.find({
       where: { user: { id: userId } },
       order: { sortOrder: 'ASC', id: 'ASC' },
@@ -25,6 +40,7 @@ export class TasksService {
     const lastTask = await this.tasksRepository.findOne({
       where: { user: { id: userId } },
       order: { sortOrder: 'DESC' },
+      select: { sortOrder: true },
     });
     const task = this.tasksRepository.create({
       ...taskData,
@@ -33,7 +49,9 @@ export class TasksService {
       user: { id: userId },
     });
 
-    return this.tasksRepository.save(task);
+    const savedTask = await this.tasksRepository.save(task);
+    await this.invalidateTaskList(userId);
+    return savedTask;
   }
 
   async update(userId: number, id: number, updateTaskDto: UpdateTaskDto) {
@@ -45,16 +63,19 @@ export class TasksService {
       task.dueDate = new Date(dueDate);
     }
 
-    return this.tasksRepository.save(task);
+    const savedTask = await this.tasksRepository.save(task);
+    await this.invalidateTaskList(userId);
+    return savedTask;
   }
 
   async remove(userId: number, id: number) {
     const task = await this.findOneForUser(userId, id);
     await this.tasksRepository.remove(task);
+    await this.invalidateTaskList(userId);
   }
 
   async reorder(userId: number, reorderTasksDto: ReorderTasksDto) {
-    const tasks = await this.findAll(userId);
+    const tasks = await this.findAllFromDatabase(userId);
     const taskIds = reorderTasksDto.taskIds;
     const taskIdSet = new Set(taskIds);
 
@@ -74,7 +95,9 @@ export class TasksService {
       return task;
     });
 
-    return this.tasksRepository.save(reorderedTasks);
+    const savedTasks = await this.tasksRepository.save(reorderedTasks);
+    await this.invalidateTaskList(userId);
+    return savedTasks;
   }
 
   private async findOneForUser(userId: number, id: number) {
@@ -87,5 +110,13 @@ export class TasksService {
     }
 
     return task;
+  }
+
+  private taskListCacheKey(userId: number) {
+    return `tasks:user:${userId}`;
+  }
+
+  private invalidateTaskList(userId: number) {
+    return this.cache.del(this.taskListCacheKey(userId));
   }
 }

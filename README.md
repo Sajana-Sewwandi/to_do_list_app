@@ -12,6 +12,7 @@ The project also includes a React + Zustand web client in `frontend/`. It uses t
 - Per-user task access: users can only list, update, delete, or reorder their own tasks
 - Task validation with `class-validator`
 - MySQL schema synchronized automatically during local development
+- Redis-backed per-user task-list cache with automatic invalidation
 - Unit tests for `TasksService`
 
 ## Requirements
@@ -71,6 +72,52 @@ The client provides registration, login, persistent session state, task CRUD, an
 npm run client:build
 ```
 
+## Run the full stack with Docker
+
+Docker Compose starts the React web server, NestJS API, MySQL, and Redis as one isolated stack. The browser communicates with the web container at `http://localhost:8080`; Nginx proxies `/auth` and `/tasks` to the internal API service.
+
+1. Install and start Docker Desktop.
+2. Create a Docker-specific environment file:
+
+   PowerShell:
+
+   ```powershell
+   Copy-Item .env.docker.example .env.docker
+   ```
+
+   macOS/Linux:
+
+   ```bash
+   cp .env.docker.example .env.docker
+   ```
+
+3. Edit `.env.docker` and replace `JWT_SECRET`, `DB_PASSWORD`, and `MYSQL_ROOT_PASSWORD` with strong values.
+4. Build and start every service:
+
+   ```bash
+   docker compose --env-file .env.docker up --build -d
+   ```
+
+5. Open `http://localhost:8080` and register an account.
+
+Useful Docker commands:
+
+```bash
+# Follow backend logs
+docker compose --env-file .env.docker logs -f api
+
+# Check all service states
+docker compose --env-file .env.docker ps
+
+# Stop the stack while retaining MySQL and Redis data volumes
+docker compose --env-file .env.docker down
+
+# Stop the stack and delete all container data
+docker compose --env-file .env.docker down -v
+```
+
+The MySQL and Redis data are kept in named Docker volumes. The API is private to the Compose network; only the web application is published to the host.
+
 Other commands:
 
 ```bash
@@ -89,6 +136,26 @@ npm run start:prod
 The project uses MySQL. Configure the `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_NAME` values in `.env`. TypeORM has `synchronize: true` enabled, so tables are created and updated automatically when the application starts.
 
 This setting is convenient for local development. Use migrations instead of `synchronize` for production deployments.
+
+## Redis task-list cache
+
+Redis caches each authenticated user's `GET /tasks` response for five minutes under the key `tasks:user:<userId>`. MySQL remains the source of truth.
+
+The cache is removed immediately after that user creates, updates, deletes, or reorders a task, so the next list request reads fresh data from MySQL and repopulates Redis. Reorder validation always reads MySQL directly rather than relying on the cache.
+
+Start Redis locally with Docker:
+
+```bash
+docker run --name taskflow-redis -p 6379:6379 -d redis:7-alpine
+```
+
+Set the connection URL in `.env`:
+
+```env
+REDIS_URL=redis://localhost:6379
+```
+
+If `REDIS_URL` is omitted or Redis is temporarily unavailable, the API continues to serve requests from MySQL; caching is skipped. To test caching with Redis running, log in, call `GET /tasks` twice, then run `redis-cli GET tasks:user:<userId>`. Create, update, delete, or reorder a task and confirm that `redis-cli GET tasks:user:<userId>` returns `(nil)` until the next `GET /tasks` repopulates it.
 
 ## API
 
@@ -252,7 +319,7 @@ Run with coverage:
 npm run test:cov
 ```
 
-The `TasksService` tests mock the TypeORM repository and cover task creation, ownership-scoped updates, and ownership-scoped deletion.
+The `TasksService` tests mock the TypeORM repository and Redis cache. They cover task creation, ownership-scoped updates/deletion, task-list cache hits and misses, cache invalidation after mutations, and task reordering.
 
 ## Useful commands
 
@@ -263,6 +330,8 @@ npm run lint
 # Format source and test files
 npm run format
 
-# Run end-to-end tests (when e2e tests are added/configured)
+# Run end-to-end HTTP tests
 npm run test:e2e
 ```
+
+The end-to-end suite starts a NestJS HTTP application with mocked database and cache services. It verifies auth routes, authenticated task routing, task DTO validation, and the reorder endpoint without requiring local MySQL or Redis.
